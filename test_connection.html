@@ -1,0 +1,252 @@
+<!--
+Plik: test_connection.html
+Opis: Strona testowa, która pokazuje:
+ - aktualną jakość połączenia (Network Information API: effectiveType, downlink, rtt)
+ - mierzoną latencję (ping) do wybranego URL
+ - liczbę osób "chcących się połączyć"
+
+Wersje działania:
+ 1) Bez serwera: liczba osób to symulacja / lokalne przyciski (do testów)
+ 2) Z serwerem WebSocket: liczba osób to rzeczywisty licznik połączeń (wymaga skonfigurowania WS_URL poniżej oraz uruchomienia serwera Node.js z kodem podanym dalej w komentarzu)
+
+Instrukcja użycia:
+ - Otwórz ten plik w przeglądarce (podwójne kliknięcie) — działa lokalnie.
+ - Jeśli chcesz mierzyć ping do konkretnego adresu, wpisz go w polu "Target URL" (domyślnie użyje /favicon.ico jeśli hostujesz). Pamiętaj, że niektóre serwery blokują CORS.
+ - Aby użyć realtime count: ustaw WS_URL na adres serwera WebSocket (np. ws://localhost:3000) i uruchom serwer (instrukcja niżej).
+
+--- SERWER WEBSOCKET (opcjonalny, Node.js) ---
+// Zapisz jako server-ws.js
+// npm init -y
+// npm install ws
+
+/*
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ port: 3000 });
+let waitingCount = 0; // ilu "chce się połączyć"
+
+wss.on('connection', (ws) => {
+  // przy połączeniu możemy traktować to jako nową osobę "chcącą się połączyć"
+  waitingCount++;
+  // wyślij aktualny stan do wszystkich
+  broadcast({ type: 'count', count: waitingCount });
+
+  ws.on('message', (msg) => {
+    // opcjonalne: obsługa wiadomości od klienta
+    try {
+      const data = JSON.parse(msg);
+      if (data.type === 'leave') {
+        waitingCount = Math.max(0, waitingCount - 1);
+        broadcast({ type: 'count', count: waitingCount });
+      }
+    } catch(e) {}
+  });
+
+  ws.on('close', () => {
+    waitingCount = Math.max(0, waitingCount - 1);
+    broadcast({ type: 'count', count: waitingCount });
+  });
+});
+
+function broadcast(obj) {
+  const raw = JSON.stringify(obj);
+  wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(raw); });
+}
+
+console.log('WebSocket server running on ws://localhost:3000');
+*/
+-->
+
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Test połączenia — strona testowa</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:20px}
+    .card{border:1px solid #ddd;padding:16px;border-radius:8px;margin-bottom:12px;max-width:880px}
+    .row{display:flex;gap:12px;align-items:center}
+    label{font-weight:600}
+    code{background:#f4f4f4;padding:2px 6px;border-radius:4px}
+    .big{font-size:1.4rem;font-weight:700}
+    button{padding:8px 12px;border-radius:6px;border:1px solid #888;background:#fff;cursor:pointer}
+  </style>
+</head>
+<body>
+  <h1>Test połączenia — strona do nauki</h1>
+  <p>Kolego: ta strona pokazuje informacje o sieci dostępne w przeglądarce oraz liczbę osób (symulowaną lub z serwera WebSocket).</p>
+
+  <div class="card">
+    <div class="row"><label>Status online:</label><div id="onlineStatus" class="big">---</div></div>
+    <div class="row"><label>Network.effectiveType:</label><div id="effectiveType">---</div></div>
+    <div class="row"><label>Downlink (Mb/s):</label><div id="downlink">---</div></div>
+    <div class="row"><label>RTT (ms):</label><div id="rtt">---</div></div>
+    <div class="row"><label>Measured ping (ms):</label><div id="measuredPing">---</div></div>
+    <div style="margin-top:10px">
+      <label for="targetUrl">Target URL (do pomiaru ping):</label>
+      <input id="targetUrl" style="width:60%" placeholder="https://example.com/ping-endpoint" />
+      <button id="pingBtn">Mierz teraz</button>
+      <small> — jeśli puste, użyje <code>/favicon.ico</code> (działa lokalnie).</small>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label>Tryb licznika osób:</label>
+      <select id="modeSelect">
+        <option value="sim">Symulacja (lokalna)</option>
+        <option value="ws">Realtime (WebSocket)</option>
+      </select>
+    </div>
+
+    <div id="simControls" style="margin-top:10px">
+      <div class="row"><label>Symulowany licznik:</label><div id="simCount" class="big">0</div></div>
+      <div style="margin-top:8px">
+        <button id="incBtn">+ osoba chce się połączyć</button>
+        <button id="decBtn">- osoba zrezygnowała</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+    </div>
+
+    <div id="wsControls" style="margin-top:10px;display:none">
+      <div class="row"><label>WS URL:</label><input id="wsUrl" value="ws://localhost:3000" style="width:40%"/></div>
+      <div class="row" style="margin-top:10px">
+        <button id="connectWs">Połącz</button>
+        <button id="disconnectWs" disabled>Rozłącz</button>
+      </div>
+      <div style="margin-top:10px">
+        <label>Aktualna liczba osób:</label>
+        <div id="wsCount" class="big">—</div>
+      </div>
+      <div style="margin-top:8px;font-size:0.9rem;color:#555">Uwaga: serwer WebSocket powinien wysyłać wiadomości JSON w formacie <code>{"type":"count","count":NUMBER}</code>.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <details open>
+      <summary>Instrukcja / co robi skrypt</summary>
+      <ul>
+        <li>Używa <code>navigator.onLine</code> oraz <code>navigator.connection</code> (jeśli dostępne) do odczytu jakości sieci.</li>
+        <li>Mierzy ping wysyłając fetch i mierząc czas odpowiedzi.</li>
+        <li>Symulowany licznik to lokalne przyciski — przydatne do testowania UI.</li>
+        <li>Realtime: łączy się z WebSocket i oczekuje wiadomości JSON z aktualną liczbą zainteresowanych.</li>
+      </ul>
+    </details>
+  </div>
+
+<script>
+// KONFIGURACJA: jeśli chcesz zawsze łączyć się do WS, ustaw domyślnie tutaj, ale możesz to też wpisać w polu na stronie.
+// const WS_URL = 'ws://localhost:3000';
+
+(function(){
+  const onlineStatus = document.getElementById('onlineStatus');
+  const effectiveType = document.getElementById('effectiveType');
+  const downlink = document.getElementById('downlink');
+  const rtt = document.getElementById('rtt');
+  const measuredPing = document.getElementById('measuredPing');
+  const targetUrlInput = document.getElementById('targetUrl');
+  const pingBtn = document.getElementById('pingBtn');
+
+  const modeSelect = document.getElementById('modeSelect');
+  const simControls = document.getElementById('simControls');
+  const wsControls = document.getElementById('wsControls');
+
+  // symulacja
+  let simCount = 0;
+  const simCountEl = document.getElementById('simCount');
+  document.getElementById('incBtn').addEventListener('click', ()=>{ simCount++; updateSim(); });
+  document.getElementById('decBtn').addEventListener('click', ()=>{ simCount = Math.max(0, simCount-1); updateSim(); });
+  document.getElementById('resetBtn').addEventListener('click', ()=>{ simCount = 0; updateSim(); });
+  function updateSim(){ simCountEl.textContent = simCount; }
+  updateSim();
+
+  // WS
+  let ws = null;
+  const connectWsBtn = document.getElementById('connectWs');
+  const disconnectWsBtn = document.getElementById('disconnectWs');
+  const wsCountEl = document.getElementById('wsCount');
+  connectWsBtn.addEventListener('click', ()=>{
+    const url = document.getElementById('wsUrl').value;
+    if (!url) return alert('Wpisz URL serwera WebSocket');
+    ws = new WebSocket(url);
+    connectWsBtn.disabled = true;
+    ws.onopen = ()=>{ disconnectWsBtn.disabled = false; console.log('WS open'); };
+    ws.onmessage = (ev)=>{
+      try {
+        const data = JSON.parse(ev.data);
+        if (data.type === 'count') wsCountEl.textContent = data.count;
+      } catch(e){ console.log('non-json', ev.data); }
+    };
+    ws.onclose = ()=>{ connectWsBtn.disabled = false; disconnectWsBtn.disabled = true; wsCountEl.textContent='—'; ws=null; };
+    ws.onerror = (e)=>{ console.error(e); };
+  });
+  disconnectWsBtn.addEventListener('click', ()=>{ if(ws) ws.close(); });
+
+  modeSelect.addEventListener('change', ()=>{
+    const m = modeSelect.value;
+    simControls.style.display = m === 'sim' ? 'block' : 'none';
+    wsControls.style.display = m === 'ws' ? 'block' : 'none';
+  });
+
+  // Network info
+  function updateNetworkInfo(){
+    onlineStatus.textContent = navigator.onLine ? 'online' : 'offline';
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn){
+      effectiveType.textContent = conn.effectiveType || '—';
+      downlink.textContent = conn.downlink || '—';
+      rtt.textContent = conn.rtt || '—';
+    } else {
+      effectiveType.textContent = 'niedostępne';
+      downlink.textContent = 'niedostępne';
+      rtt.textContent = 'niedostępne';
+    }
+  }
+  window.addEventListener('online', updateNetworkInfo);
+  window.addEventListener('offline', updateNetworkInfo);
+  if (navigator.connection) navigator.connection.addEventListener('change', updateNetworkInfo);
+  updateNetworkInfo();
+
+  // Simple ping (measured via fetch timing). Możesz użyć innego URL.
+  async function measurePing(url, attempts=3){
+    if (!url) url = location.origin + '/favicon.ico';
+    let best = Infinity;
+    for (let i=0;i<attempts;i++){
+      const t0 = performance.now();
+      try{
+        // fetch with no-cache to avoid cached responses
+        await fetch(url, {cache:'no-store', method:'HEAD'});
+        const dt = performance.now()-t0;
+        best = Math.min(best, dt);
+      }catch(e){
+        // jeśli fetch się nie udał, ustaw NaN
+        best = Infinity;
+      }
+    }
+    return isFinite(best) ? Math.round(best) : NaN;
+  }
+
+  pingBtn.addEventListener('click', async ()=>{
+    pingBtn.disabled = true; pingBtn.textContent = 'mierzę...';
+    const target = targetUrlInput.value.trim();
+    const url = target || (location.origin + '/favicon.ico');
+    const ping = await measurePing(url, 3);
+    measuredPing.textContent = isNaN(ping) ? 'błąd (CORS / brak odpowiedzi)' : ping + ' ms';
+    pingBtn.disabled = false; pingBtn.textContent = 'Mierz teraz';
+  });
+
+  // automatyczne okresowe odświeżanie sieci i ping co 15s (jeśli chcesz)
+  setInterval(updateNetworkInfo, 5000);
+  setInterval(async ()=>{
+    // mierz ping tła tylko jeśli strona widoczna
+    if (document.visibilityState === 'visible'){
+      const target = targetUrlInput.value.trim();
+      const url = target || (location.origin + '/favicon.ico');
+      const ping = await measurePing(url, 1);
+      measuredPing.textContent = isNaN(ping) ? '—' : ping + ' ms';
+    }
+  }, 15000);
+
+})();
+</script>
+</body>
+</html>
